@@ -1,16 +1,17 @@
-let db = require('./config.js')
-let Users = require('./schema/User.js')
-let ActiveUsers = require('./schema/ActiveUsers.js');
-let sequelize = require('sequelize')
-let util = require('./util.js')
-let Promise = require('bluebird')
+var db = require('./config.js')
+var Users = require('./schema/User.js')
+var ActiveUsers = require('./schema/ActiveUsers.js');
+var UserInterests = require('./schema/UserInterests.js');
+var sequelize = require('sequelize')
+var util = require('./util.js')
+var Promise = require('bluebird')
 
 module.exports.createUser = (nI, cb) => {
   db.query('select id from Users where email = ?',
   {replacements : [nI.email], type : sequelize.QueryTypes.SELECT})
   .then(userFound => {
     if (userFound.length > 0) {
-      cb('Email already registered, try logging in');
+      cb({invalid : true});
     } else {
       util.cipher(nI.password)
       .then(hashedPassword => {
@@ -69,14 +70,14 @@ module.exports.userLogin = (email, password, cb) => {
         if (match) {
           cb(false, {id : userFound[0].id, firstname: userFound[0].firstname});
         } else {
-          cb('Password/Email combination did not match');
+          cb({invalid : true});
         }
       })
       .catch(error => {
         cb(error);
       })
     } else {
-      cb('User not found');
+      cb({invalid : true});
     }
   })
   .catch(error => {
@@ -165,22 +166,24 @@ module.exports.findLocalRoom = (user, lat, long, cb) => {
           cb(error);
         })
      } else {
-       let roomsIds = [];
+       var roomsIds = [];
+
        res1.forEach(id => {roomsIds.push(id['roomId'])});
        db.query('select latitude, longitude, roomId from ActiveUsers where roomId in (?)',
         {replacements : [roomsIds], type : sequelize.QueryTypes.SELECT})
         .then(res4 => {
 
-          let currDistance = 10000;
-          let shortestPoint;
+          var currDistance = 10000;
+          var shortestPoint;
 
-          for(let i = 0; i <res4.length; i++){
-            let temp = util.distance(lat, long, res4[i]['latitude'], res4[i]['longitude']);
+          for(var i = 0; i <res4.length; i++){
+            var temp = util.distance(lat, long, res4[i]['latitude'], res4[i]['longitude']);
             if(temp < currDistance) {
               currDistance = temp;
               shortestPoint = res4[i]['roomId'];
             }
           }
+
           db.query('update ActiveUsers set roomId = ? where userId = ?',
           {replacements : [shortestPoint, user], type : sequelize.QueryTypes.UPDATE})
           .then(res5 => {
@@ -198,4 +201,120 @@ module.exports.findLocalRoom = (user, lat, long, cb) => {
    .catch(error => {
      cb(error);
    })
+}
+
+module.exports.getAllInterests = (cb) => {
+  db.query('select id, Interest from Interests', 
+  {type : sequelize.QueryTypes.SELECT})
+  .then(results => {
+    cb(false, results);
+  })
+  .catch(error => {
+    cb(error);
+  })
+}
+
+module.exports.getUserInterests = (inputId, cb) => {
+  db.query('select i.id, i.Interest from UserInterests uI join Interests i on uI.interestId = i.id where uI.userId = ?',
+  {replacements : [inputId], type : sequelize.QueryTypes.SELECT})
+  .then(result => {
+    cb(false, result);
+  })
+  .catch(error => {
+    cb(error);
+  })
+}
+
+module.exports.saveUserInterests = (inputId, interests, cb) => {
+  db.query('delete from UserInterests where userId = ?',
+  {replacements : [inputId], type : sequelize.QueryTypes.DELETE})
+  .then(result => {
+    for (var i in interests) {
+      if (interests[i]) {
+        UserInterests.create({
+          userId : inputId,
+          interestId : i
+        })
+      }
+    }
+    cb(false, 'Success');
+  })
+  .catch(error => {
+    cb(error);
+  })
+}
+
+module.exports.findCommonUser = (user, cb) => {
+  db.query('select roomId from ActiveUsers where roomId != 0 group by roomId having count(roomId) < 10', 
+    {type : sequelize.QueryTypes.SELECT})
+    .then(res1 => {
+      if (res1.length === 0) {
+        cb(false, false);
+      } else {
+        db.query('select interestId from UserInterests where userId = ?',
+        {replacements : [user], type : sequelize.QueryTypes.SELECT})
+        .then(foundInterests => {
+
+          var roomsIds = [];
+          var interestIds = [];
+          res1.forEach(id => {roomsIds.push(id['roomId'])});
+          foundInterests.forEach(interest => {interestIds.push(interest['interestId'])});
+
+          db.query('select UI.userId AS User, AU.roomId AS Room, count(*) AS Total_Match from ActiveUsers AU join UserInterests UI on UI.userId = AU.userId where UI.interestId in (?) and AU.roomId in (?) group by UI.userId, AU.roomId order by Total_Match DESC',
+          {replacements : [interestIds, roomsIds], type : sequelize.QueryTypes.SELECT})
+          .then(foundUsers => {
+            if(foundUsers.length===0){
+              cb(false, false)
+            } else {
+              db.query('update ActiveUsers set roomId = ? where userId = ?',
+              {replacements : [foundUsers[0]['Room'], user], type : sequelize.QueryTypes.UPDATE})
+              .then(updatedUser => {
+                db.query('select interest from Interests i join UserInterests ui on i.id = ui.interestId where ui.interestId in (?) and ui.userId = ?',
+                {replacements : [interestIds, foundUsers[0]['User']], type : sequelize.QueryTypes.SELECT})
+                .then(commonInterests => {
+                  cb(false, foundUsers[0]['Room'], commonInterests);
+                })
+                .catch(error => {
+                  cb(error);
+                })
+              })
+              .catch(error => {
+                cb(error)
+              })
+            }
+          })
+          .catch(error => {
+            cb(error);
+          })
+        })
+        .catch(error => {
+          cb(error)
+        })
+      }
+    })
+    .catch(error => {
+      cb(error)
+    })
+}
+
+module.exports.getActiveUsers = (inputRoomId, userId, cb) => {
+  db.query('select u.firstname, u.id from Users u join ActiveUsers au on u.id = au.userId where au.roomId = ? and u.id != ? and au.roomId !=0 order by u.firstname ASC',
+  {replacements : [inputRoomId, userId], type : sequelize.QueryTypes.SELECT})
+  .then(userList => {
+    cb(false, userList);
+  })
+  .catch(error => {
+    cb(error);
+  })
+}
+
+module.exports.getMapLocations = (cb) => {
+  db.query('select latitude as lat, longitude as lng from ActiveUsers', 
+    {type : sequelize.QueryTypes.SELECT})
+    .then(locations => {
+      cb(false, locations);
+    })
+    .catch(error => {
+      cb(error);
+    })
 }

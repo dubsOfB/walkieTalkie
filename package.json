@@ -4,8 +4,11 @@
   "description": "Establishing connections by interests in your location",
   "author": "Greg Hasenauer, Rakan Nesheiwat, Sean Hong",
   "license": "UNLICENSED",
+  "engines": {
+    "node": "7.2.1"
+  },
   "scripts": {
-    "start": "nodemon server.js",
+    "start": "node server.js",
     "webpack": "./node_modules/.bin/webpack -d --watch",
     "test": "mocha"
   },
@@ -17,13 +20,15 @@
     "body-parser": "^1.16.0",
     "express": "^4.14.0",
     "express-session": "^1.15.0",
+    "google-maps-react": "^1.0.19",
+    "invariant": "^2.2.2",
     "lodash": "^4.17.4",
+    "mysql": "^2.13.0",
     "mysql2": "^1.1.2",
     "nodemon": "^1.11.0",
     "react": "^15.4.2",
     "react-bootstrap": "^0.30.7",
     "react-dom": "^15.4.2",
-    "react-router": "^3.0.2",
     "sequelize": "^3.29.0",
     "socket.io": "^1.7.2",
     "webpack": "^1.14.0"
@@ -37,6 +42,7 @@
     "babel-register": "^6.3.13",
     "chai": "^3.5.0",
     "mocha": "^3.2.0",
-    "morgan": "^1.7.0"
+    "morgan": "^1.7.0",
+    "mysql": "^1.1.2"
   }
 }
